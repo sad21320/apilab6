@@ -1,0 +1,340 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система бронирования отеля — Бронирования</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f8f9fa;
+        }
+
+        h1 {
+            color: #2c3e50;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+
+        th {
+            background: #3498db;
+            color: white;
+        }
+
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        tr:hover {
+            background: #e8f4fc;
+        }
+
+        button {
+            padding: 8px 16px;
+            margin: 4px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+        }
+
+        .add {
+            background: #27ae60;
+            color: white;
+        }
+
+        .edit {
+            background: #f39c12;
+            color: white;
+        }
+
+        .delete {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .form-container {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-width: 600px;
+            margin: 20px 0;
+        }
+
+        label {
+            display: block;
+            margin: 10px 0 4px;
+            font-weight: bold;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+
+        .buttons {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Бронирования отеля</h1>
+
+    <button class="add" onclick="showCreateForm()">+ Новое бронирование</button>
+
+    <div id="formContainer" class="form-container">
+        <h2 id="formTitle">Новое бронирование</h2>
+        <input type="hidden" id="bookingId">
+
+        <label>Гость</label>
+        <select id="guestId" required></select>
+
+        <label>Номер</label>
+        <select id="roomId" required></select>
+
+        <label>Дата заезда</label>
+        <input type="date" id="checkInDate" required>
+
+        <label>Дата выезда</label>
+        <input type="date" id="checkOutDate" required>
+
+        <label>Итоговая стоимость</label>
+        <input type="number" step="0.01" id="totalCost" required>
+
+        <label>Статус</label>
+        <select id="status" required>
+            <option value="confirmed">Подтверждено</option>
+            <option value="cancelled">Отменено</option>
+        </select>
+
+        <div class="buttons">
+            <button class="add" onclick="saveBooking()">Сохранить</button>
+            <button onclick="hideForm()">Отмена</button>
+        </div>
+    </div>
+
+    <table id="bookingsTable">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Гость</th>
+                <th>Номер</th>
+                <th>Тип номера</th>
+                <th>Заезд</th>
+                <th>Выезд</th>
+                <th>Стоимость</th>
+                <th>Статус</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        const API_BASE = '/api';
+
+        async function loadData(endpoint, callback) {
+            try {
+                const res = await fetch(`${API_BASE}/${endpoint}`);
+                if (!res.ok) throw new Error(res.status);
+                const data = await res.json();
+                callback(data);
+            } catch (e) {
+                console.error(`Ошибка загрузки ${endpoint}:`, e);
+                alert(`Не удалось загрузить данные: ${e.message}`);
+            }
+        }
+
+        function fillSelect(selectId, data, valueKey = 'id', textKey = 'name') {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '<option value="">Выберите...</option>';
+            data.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item[valueKey];
+                // Для гостей — составляем ФИО
+                if (selectId === 'guestId') {
+                    opt.textContent = `${item.firstName || ''} ${item.lastName || ''} ${item.middleName || ''}`.trim() || '—';
+                } else {
+                    opt.textContent = item[textKey] || item.roomNumber || item.typeName || '—';
+                }
+                select.appendChild(opt);
+            });
+        }
+
+        async function loadBookings() {
+            loadData('Bookings', data => {
+                const tbody = document.querySelector('#bookingsTable tbody');
+                tbody.innerHTML = '';
+                if (!data.length) {
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center">Нет бронирований</td></tr>';
+                    return;
+                }
+                data.forEach(b => {
+                    const guestName = b.guest ? `${b.guest.firstName} ${b.guest.lastName}`.trim() : '—';
+                    const roomTypeName = b.room?.roomType?.typeName || '—';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${b.bookingID}</td>
+                        <td>${guestName}</td>
+                        <td>${b.room?.roomNumber || '—'}</td>
+                        <td>${roomTypeName}</td>
+                        <td>${new Date(b.checkinDate).toLocaleDateString('ru-RU')}</td>
+                        <td>${new Date(b.checkoutDate).toLocaleDateString('ru-RU')}</td>
+                        <td>${Number(b.totalPrice).toFixed(2)} ₽</td>
+                        <td>${b.status === 'confirmed' ? 'Подтверждено' : b.status === 'cancelled' ? 'Отменено' : b.status}</td>
+                        <td>
+                            <button class="edit" onclick="editBooking(${b.bookingID})">Изменить</button>
+                            <button class="delete" onclick="deleteBooking(${b.bookingID})">Удалить</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            });
+        }
+
+        async function loadGuestsAndRooms() {
+            await loadData('Guests', data => fillSelect('guestId', data, 'guestID'));
+            await loadData('Rooms', data => fillSelect('roomId', data, 'roomID', 'roomNumber'));
+        }
+
+        function showCreateForm() {
+            document.getElementById('formTitle').textContent = 'Новое бронирование';
+            document.getElementById('bookingId').value = '';
+            document.getElementById('guestId').value = '';
+            document.getElementById('roomId').value = '';
+            document.getElementById('checkInDate').value = '';
+            document.getElementById('checkOutDate').value = '';
+            document.getElementById('totalCost').value = '';
+            document.getElementById('status').value = 'Подтверждено';
+            document.getElementById('formContainer').style.display = 'block';
+        }
+
+        function showEditForm(booking) {
+            document.getElementById('formTitle').textContent = 'Редактировать бронирование';
+            document.getElementById('bookingId').value = booking.bookingID;
+            document.getElementById('guestId').value = booking.guestID;
+            document.getElementById('roomId').value = booking.roomID;
+            document.getElementById('checkInDate').value = booking.checkinDate.slice(0, 10);
+            document.getElementById('checkOutDate').value = booking.checkoutDate.slice(0, 10);
+            document.getElementById('totalCost').value = booking.totalPrice;
+            document.getElementById('status').value = booking.status;
+            document.getElementById('formContainer').style.display = 'block';
+        }
+
+        function hideForm() {
+            document.getElementById('formContainer').style.display = 'none';
+        }
+
+        async function saveBooking() {
+            const id = document.getElementById('bookingId').value;
+
+            const checkInInput = document.getElementById('checkInDate');
+            const checkOutInput = document.getElementById('checkOutDate');
+            const totalCostInput = document.getElementById('totalCost');
+            const guestSelect = document.getElementById('guestId');
+            const roomSelect = document.getElementById('roomId');
+
+            // Проверки
+            if (!guestSelect.value) { alert('Выберите гостя!'); return; }
+            if (!roomSelect.value) { alert('Выберите номер!'); return; }
+            if (!checkInInput.value) { alert('Укажите дату заезда!'); return; }
+            if (!checkOutInput.value) { alert('Укажите дату выезда!'); return; }
+
+            const checkIn = new Date(checkInInput.value);
+            const checkOut = new Date(checkOutInput.value);
+
+            if (isNaN(checkIn) || isNaN(checkOut)) {
+                alert('Некорректный формат даты!');
+                return;
+            }
+
+            if (checkIn >= checkOut) {
+                alert('Дата выезда должна быть позже даты заезда!');
+                return;
+            }
+
+            if (!totalCostInput.value || Number(totalCostInput.value) <= 0) {
+                alert('Укажите положительную стоимость!');
+                return;
+            }
+
+            const payload = {
+                bookingID: id ? Number(id) : undefined,
+                guestID: Number(guestSelect.value),
+                roomID: Number(roomSelect.value),
+                checkinDate: checkInInput.value + 'T00:00:00Z',  // ← ISO-формат + UTC
+                checkoutDate: checkOutInput.value + 'T00:00:00Z',
+                totalPrice: Number(totalCostInput.value),
+                status: document.getElementById('status').value
+            };
+
+            try {
+                const method = id ? 'PUT' : 'POST';
+                const url = id ? `${API_BASE}/Bookings/${id}` : `${API_BASE}/Bookings`;
+
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const err = await res.text();
+                    throw new Error(err || res.statusText);
+                }
+
+                hideForm();
+                loadBookings();
+                alert(id ? 'Бронирование обновлено!' : 'Бронирование создано!');
+            } catch (e) {
+                alert('Ошибка сохранения: ' + e.message);
+            }
+        }
+
+        async function editBooking(id) {
+            try {
+                const res = await fetch(`${API_BASE}/Bookings/${id}`);
+                if (!res.ok) throw new Error(res.status);
+                const booking = await res.json();
+                showEditForm(booking);
+            } catch (e) {
+                alert('Не удалось загрузить бронирование');
+            }
+        }
+
+        async function deleteBooking(id) {
+            if (!confirm('Удалить бронирование?')) return;
+            try {
+                const res = await fetch(`${API_BASE}/Bookings/${id}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error(res.status);
+                loadBookings();
+                alert('Бронирование удалено');
+            } catch (e) {
+                alert('Ошибка удаления: ' + e.message);
+            }
+        }
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', () => {
+            loadGuestsAndRooms();
+            loadBookings();
+        });
+    </script>
+</body>
+</html>
